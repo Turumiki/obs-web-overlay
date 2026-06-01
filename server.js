@@ -4,7 +4,7 @@
 // カウントダウンタイマー オーバーレイ サーバー
 //
 // 構成: このサーバー1つで
-//   - /          → ディレクター操作盤 (director.html)
+//   - /          → コントロールパネル (director.html)
 //   - /overlay   → OBS ブラウザソース (overlay.html)
 //   を配信し、WebSocket で状態を全クライアントに同期する。
 //
@@ -304,7 +304,7 @@ server.on('error', (err) => {
 server.listen(PORT, '0.0.0.0', () => {
   console.log('⏱  カウントダウンオーバーレイ サーバー起動');
   const ips = getLanIPs();
-  console.log('\n  ディレクター操作盤:');
+  console.log('\n  コントロールパネル:');
   console.log(`    → http://localhost:${PORT}/`);
   ips.forEach((ip) => console.log(`    → http://${ip}:${PORT}/`));
   console.log('\n  OBS ブラウザソース:');
