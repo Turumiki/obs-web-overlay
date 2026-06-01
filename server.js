@@ -9,7 +9,7 @@
 //   を配信し、WebSocket で状態を全クライアントに同期する。
 //
 // 時計ズレ耐性:
-//   サーバーは「running なら remainingMs と anchorTime (server Date.now()) を保持」し、
+//   サーバーは「running なら remainingMs と anchorTime (単調時計) を保持」し、
 //   送信時に "その瞬間の残り時間" を計算して remainingMs として配る。
 //   クライアントは受信時刻 (ローカル performance.now) を基準に、ローカル経過だけで
 //   表示を進める。マシン間で絶対時刻を比較しないので時計ズレの影響を受けない。
@@ -19,7 +19,11 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { performance } = require('perf_hooks');
 const WebSocket = require('ws');
+
+// 単調時計 (NTP 同期や手動時刻変更の影響を受けない)。タイマー計算は全てこれを使う。
+const monoNow = () => performance.now();
 
 const PORT = 8090; // yt-monitor (8080) と被らないよう 8090
 const STATE_FILE = path.join(__dirname, 'state.json');
@@ -58,7 +62,7 @@ const state = Object.assign({}, DEFAULT_STATE);
 // runtime-only
 let running = false;
 let remainingMs = state.durationMs; // anchor 残り
-let anchorTime = Date.now();        // server Date.now() at anchor
+let anchorTime = monoNow();         // 単調時計の anchor
 
 try {
   if (fs.existsSync(STATE_FILE)) {
@@ -86,7 +90,7 @@ function scheduleSave() {
 
 function currentRemaining() {
   if (!running) return remainingMs;
-  return remainingMs - (Date.now() - anchorTime);
+  return remainingMs - (monoNow() - anchorTime);
 }
 
 // クライアントに配る状態。remainingMs は「送信時点の残り」。
@@ -166,7 +170,7 @@ function applyCommand(msg) {
       const ms = clamp(Math.round(msg.ms), 0, 100 * 60 * 60 * 1000); // 0〜100h
       state.durationMs = ms;
       remainingMs = ms;
-      anchorTime = Date.now();
+      anchorTime = monoNow();
       scheduleSave();
       return true;
     }
@@ -174,33 +178,33 @@ function applyCommand(msg) {
       if (running) return false;
       remainingMs = currentRemaining();
       running = true;
-      anchorTime = Date.now();
+      anchorTime = monoNow();
       return true;
     }
     case 'timer_pause': {
       if (!running) return false;
       remainingMs = currentRemaining();
       running = false;
-      anchorTime = Date.now();
+      anchorTime = monoNow();
       return true;
     }
     case 'timer_toggle': {
       remainingMs = currentRemaining();
       running = !running;
-      anchorTime = Date.now();
+      anchorTime = monoNow();
       return true;
     }
     case 'timer_reset': {
       running = false;
       remainingMs = state.durationMs;
-      anchorTime = Date.now();
+      anchorTime = monoNow();
       return true;
     }
     case 'timer_adjust': {
       if (!isNum(msg.deltaMs)) return false;
       // 実行中でも停止中でも、現在残りに加算 (下限なし = マイナスも許容)
       remainingMs = currentRemaining() + Math.round(msg.deltaMs);
-      anchorTime = Date.now();
+      anchorTime = monoNow();
       return true;
     }
     case 'timer_zero': {
