@@ -22,12 +22,12 @@ const os = require('os');
 const { performance } = require('perf_hooks');
 const WebSocket = require('ws');
 
-// 単調時計 (NTP 同期や手動時刻変更の影響を受けない)。タイマー計算は全てこれを使う。
-const monoNow = () => performance.now();
-
 const PORT = 8090; // yt-monitor (8080) と被らないよう 8090
 const STATE_FILE = path.join(__dirname, 'state.json');
 const PUBLIC_DIR = path.join(__dirname, 'public');
+
+// 単調時計 (NTP 同期や手動時刻変更の影響を受けない)。タイマー計算は全てこれを使う。
+const monoNow = () => performance.now();
 
 // --- canonical state -------------------------------------------------------
 // running 状態と anchorTime は永続化しない (再起動時は停止状態に戻す)。
@@ -35,7 +35,7 @@ const DEFAULT_STATE = {
   // timer
   durationMs: 5 * 60 * 1000, // リセット時に戻る既定の長さ
   // zero behavior
-  zeroMode: 'blink',          // 'blink' | 'countup' | 'text'
+  zeroMode: 'blink',          // 'blink' | 'countup' | 'text' | 'static'
   zeroText: 'まもなく開始',
   // design
   fontKey: 'system',
@@ -83,8 +83,15 @@ function scheduleSave() {
     saveTimer = null;
     const out = {};
     for (const k of PERSIST_KEYS) out[k] = state[k];
-    try { fs.writeFileSync(STATE_FILE, JSON.stringify(out, null, 2)); }
-    catch (e) { console.warn('state.json save failed:', e && e.message); }
+    // .tmp に書いてから rename することで、書き込み途中で落ちても state.json が壊れない。
+    const tmp = STATE_FILE + '.tmp';
+    try {
+      fs.writeFileSync(tmp, JSON.stringify(out, null, 2));
+      fs.renameSync(tmp, STATE_FILE);
+    } catch (e) {
+      console.warn('state.json save failed:', e && e.message);
+      try { fs.unlinkSync(tmp); } catch (_) {}
+    }
   }, 500);
 }
 
@@ -124,7 +131,11 @@ function publicState() {
 function serveStatic(res, file, type) {
   fs.readFile(path.join(PUBLIC_DIR, file), (err, data) => {
     if (err) { res.writeHead(404); res.end('Not found'); return; }
-    res.writeHead(200, { 'Content-Type': type });
+    // OBS のブラウザソース等が古い HTML をキャッシュしないように。
+    res.writeHead(200, {
+      'Content-Type': type,
+      'Cache-Control': 'no-store, must-revalidate',
+    });
     res.end(data);
   });
 }
@@ -158,6 +169,9 @@ function broadcastState() {
 const isNum = (v) => typeof v === 'number' && isFinite(v);
 const isStr = (v) => typeof v === 'string';
 const isBool = (v) => typeof v === 'boolean';
+// #rgb / #rrggbb の HEX のみ許可。クライアントの hexToRgb と一致させる。
+const HEX_RE = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
+const isHex = (v) => isStr(v) && HEX_RE.test(v);
 
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
@@ -219,12 +233,12 @@ function applyCommand(msg) {
     case 'design': {
       let changed = false;
       const d = msg.data || {};
-      if (isStr(d.fontKey))    { state.fontKey = d.fontKey; changed = true; }
-      if (isStr(d.fontFamily)) { state.fontFamily = d.fontFamily; changed = true; }
+      if (isStr(d.fontKey))    { state.fontKey = d.fontKey.slice(0, 40); changed = true; }
+      if (isStr(d.fontFamily)) { state.fontFamily = d.fontFamily.slice(0, 200); changed = true; }
       if (isNum(d.fontSize))   { state.fontSize = clamp(d.fontSize, 2, 80); changed = true; }
-      if (isStr(d.color))      { state.color = d.color; changed = true; }
+      if (isHex(d.color))      { state.color = d.color; changed = true; }
       if (isStr(d.bgMode) && ['transparent', 'solid', 'panel'].includes(d.bgMode)) { state.bgMode = d.bgMode; changed = true; }
-      if (isStr(d.bgColor))    { state.bgColor = d.bgColor; changed = true; }
+      if (isHex(d.bgColor))    { state.bgColor = d.bgColor; changed = true; }
       if (isNum(d.bgOpacity))  { state.bgOpacity = clamp(d.bgOpacity, 0, 1); changed = true; }
       if (isStr(d.position) && ['center','top','bottom','tl','tr','bl','br','custom'].includes(d.position)) { state.position = d.position; changed = true; }
       if (isNum(d.posX))       { state.posX = clamp(d.posX, 0, 100); changed = true; }
@@ -233,7 +247,7 @@ function applyCommand(msg) {
       if (isBool(d.shadow))    { state.shadow = d.shadow; changed = true; }
       if (isNum(d.outlineWidth)) { state.outlineWidth = clamp(d.outlineWidth, 0, 0.3); changed = true; }
       if (isBool(d.glow))      { state.glow = d.glow; changed = true; }
-      if (isStr(d.glowColor))  { state.glowColor = d.glowColor; changed = true; }
+      if (isHex(d.glowColor))  { state.glowColor = d.glowColor; changed = true; }
       if (changed) scheduleSave();
       return changed;
     }
@@ -260,11 +274,11 @@ wss.on('connection', (ws) => {
   ws.on('error', () => {});
 });
 
-// 軽い定期再同期 (10秒)。遅延接続/ドリフト補正の保険。
-// クライアントは同じ式で計算するので、再アンカーしても表示は飛ばない。
+// 走行中だけ定期再同期 (30秒)。停止中は state が変わらないので無駄なブロードキャストは行わない。
+// 接続直後の初期 state 送信があるので遅延接続もカバーできる。
 setInterval(() => {
-  if (wss.clients.size > 0) broadcastState();
-}, 10000);
+  if (running && wss.clients.size > 0) broadcastState();
+}, 30000);
 
 // --- 起動 ------------------------------------------------------------------
 function getLanIPs() {
