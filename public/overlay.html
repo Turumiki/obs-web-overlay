@@ -48,9 +48,9 @@
      stroke が文字内側を侵食せず均一でクリーンな縁になる。
      グローは text-shadow で別途付与 (text-stroke と共存できる)。 */
   #timer { paint-order: stroke fill; }
+  /* text-stroke は非標準プロパティで実機では効かないので -webkit- のみ。 */
   #timer.has-shadow {
     -webkit-text-stroke: var(--outline-width) #000;
-    text-stroke: var(--outline-width) #000;
   }
   #timer.has-glow {
     text-shadow:
@@ -111,6 +111,7 @@ function applyState(s) {
   if (typeof s.zeroText === 'string') zeroText = s.zeroText;
   applyDesign(s);
   setStatus(running ? 'running' : 'paused');
+  ensureRender(); // 停止中でも state 変化を 1 フレーム分反映する
 }
 
 function applyDesign(s) {
@@ -189,7 +190,9 @@ function clock(totalSec) {
 
 let lastText = '';
 let lastBlink = null;
+let rafId = 0;
 function render() {
+  rafId = 0;
   const rem = running ? (baseRemaining - (performance.now() - baseAt)) : baseRemaining;
   let text, blink = false;
   if (rem > 0) {
@@ -208,9 +211,12 @@ function render() {
   }
   if (text !== lastText) { timerEl.textContent = text; lastText = text; }
   if (blink !== lastBlink) { timerEl.classList.toggle('blinking', blink); lastBlink = blink; }
-  requestAnimationFrame(render);
+  // 走行中だけ rAF を継続。停止中は state が来たときに ensureRender() で1フレームだけ起きる。
+  // 点滅は CSS animation なので rAF は不要。
+  if (running) rafId = requestAnimationFrame(render);
 }
-requestAnimationFrame(render);
+function ensureRender() { if (!rafId) rafId = requestAnimationFrame(render); }
+ensureRender();
 
 // ---- WebSocket ----
 let ws = null;
