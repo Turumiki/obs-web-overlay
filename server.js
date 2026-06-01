@@ -51,6 +51,7 @@ const DEFAULT_STATE = {
   align: 'center',            // 'left'|'center'|'right' タイマーの揃え (桁数変化時のアンカー)
   shadow: true,
   outlineWidth: 0.05,         // 縁取りの太さ (em)。shadow=true のとき有効
+  outlineColor: '#000000',    // 縁取りの色
   glow: false,
   glowColor: '#00e5ff',
 };
@@ -122,6 +123,7 @@ function publicState() {
     align: state.align,
     shadow: state.shadow,
     outlineWidth: state.outlineWidth,
+    outlineColor: state.outlineColor,
     glow: state.glow,
     glowColor: state.glowColor,
   };
@@ -246,6 +248,7 @@ function applyCommand(msg) {
       if (isStr(d.align) && ['left','center','right'].includes(d.align)) { state.align = d.align; changed = true; }
       if (isBool(d.shadow))    { state.shadow = d.shadow; changed = true; }
       if (isNum(d.outlineWidth)) { state.outlineWidth = clamp(d.outlineWidth, 0, 0.3); changed = true; }
+      if (isHex(d.outlineColor)) { state.outlineColor = d.outlineColor; changed = true; }
       if (isBool(d.glow))      { state.glow = d.glow; changed = true; }
       if (isHex(d.glowColor))  { state.glowColor = d.glowColor; changed = true; }
       if (changed) scheduleSave();

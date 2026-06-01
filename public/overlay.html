@@ -15,6 +15,7 @@
     --bg-fill: transparent;
     --glow-color: #00e5ff;
     --outline-width: 0.05em;
+    --outline-color: #000;
   }
   html, body {
     margin: 0; padding: 0;
@@ -50,7 +51,7 @@
   #timer { paint-order: stroke fill; }
   /* text-stroke は非標準プロパティで実機では効かないので -webkit- のみ。 */
   #timer.has-shadow {
-    -webkit-text-stroke: var(--outline-width) #000;
+    -webkit-text-stroke: var(--outline-width) var(--outline-color);
   }
   #timer.has-glow {
     text-shadow:
@@ -124,6 +125,7 @@ function applyDesign(s) {
   if (typeof s.color === 'string') root.style.setProperty('--timer-color', s.color);
   if (typeof s.glowColor === 'string') root.style.setProperty('--glow-color', s.glowColor);
   if (typeof s.outlineWidth === 'number') root.style.setProperty('--outline-width', s.outlineWidth + 'em');
+  if (typeof s.outlineColor === 'string') root.style.setProperty('--outline-color', s.outlineColor);
 
   // background
   const fill = bgFill(s);
