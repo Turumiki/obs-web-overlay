@@ -106,13 +106,16 @@
       <button data-delta="-60000">−1分</button>
       <button data-delta="-300000">−5分</button>
     </div>
+    <div class="row" style="justify-content:center; font-size:11px; color:var(--muted);">
+      ショートカット: Space=開始/一時停止 / R=リセット / +/−=±1分
+    </div>
   </div>
 
   <!-- 時間セット -->
   <div class="panel">
     <h2>時間をセット</h2>
     <div class="row">
-      <input type="number" id="set-min" min="0" max="600" value="5"> 分
+      <input type="number" id="set-min" min="0" max="6000" value="5"> 分
       <input type="number" id="set-sec" min="0" max="59" value="0"> 秒
       <button class="blue" id="btn-set">セット</button>
       <span class="sep"></span>
@@ -205,7 +208,7 @@
         <label>縁取り</label>
         <label><input type="checkbox" id="d-shadow" checked> 表示</label>
         <span>太さ</span>
-        <input type="range" id="d-outline" min="0" max="25" step="1" value="5" title="縁取りの太さ">
+        <input type="range" id="d-outline" min="0" max="30" step="1" value="5" title="縁取りの太さ">
         <span class="pill" id="d-outline-val">0.05em</span>
       </div>
       <div class="row">
@@ -265,11 +268,10 @@ function applyPreviewDesign(s) {
     const a = (typeof s.bgOpacity === 'number') ? s.bgOpacity : 0.6;
     el.style.background = `rgba(${rgb.r},${rgb.g},${rgb.b},${a})`;
   }
-  // 縁取り (text-stroke) とグロー (text-shadow) — overlay と同方式
+  // 縁取り (-webkit-text-stroke) とグロー (text-shadow) — overlay と同方式
+  // text-stroke は非標準でブラウザでは効かないので -webkit- のみ。
   const ow = (typeof s.outlineWidth === 'number') ? s.outlineWidth : 0.05;
-  const stroke = s.shadow ? (ow + 'em #000') : '';
-  el.style.webkitTextStroke = stroke;
-  el.style.textStroke = stroke;
+  el.style.webkitTextStroke = s.shadow ? (ow + 'em #000') : '';
   if (s.glow) {
     const g = s.glowColor || '#00e5ff';
     el.style.textShadow = `0 0 0.12em ${g}, 0 0 0.28em ${g}, 0 0 0.55em ${g}`;
@@ -315,9 +317,11 @@ function send(obj) {
 }
 connect();
 
-// 入力中の要素は server state で上書きしない
-function typing(el) { return document.activeElement === el; }
-function setIfNotTyping(el, val) { if (el && !typing(el)) el.value = val; }
+// 操作中の要素は server state で上書きしない (ドラッグ中のスライダーが飛んだり、入力中の文字が消えたりするのを防ぐ)。
+// activeElement は input/select/textarea/range/color のいずれもフォーカス中に一致する。
+function isActive(el) { return el && document.activeElement === el; }
+function setValueIfIdle(el, val) { if (el && !isActive(el)) el.value = val; }
+function setCheckedIfIdle(el, checked) { if (el && !isActive(el)) el.checked = checked; }
 
 function applyState(s) {
   running = !!s.running;
@@ -332,24 +336,36 @@ function applyState(s) {
 
   // ゼロ挙動 UI
   const zr = document.querySelector('input[name=zero][value="' + zeroMode + '"]');
-  if (zr) zr.checked = true;
-  setIfNotTyping($('zero-text'), zeroText);
+  if (zr && !isActive(zr)) zr.checked = true;
+  setValueIfIdle($('zero-text'), zeroText);
 
-  // デザイン UI 同期
-  if (s.fontKey && !typing($('d-font'))) $('d-font').value = s.fontKey;
-  if (typeof s.fontSize === 'number') { $('d-size').value = s.fontSize; $('d-size-val').textContent = s.fontSize + 'vh'; }
-  if (typeof s.color === 'string') $('d-color').value = s.color;
-  if (typeof s.bgMode === 'string') $('d-bgmode').value = s.bgMode;
-  if (typeof s.bgColor === 'string') $('d-bgcolor').value = s.bgColor;
-  if (typeof s.bgOpacity === 'number') { $('d-bgopacity').value = Math.round(s.bgOpacity * 100); $('d-bgopacity-val').textContent = Math.round(s.bgOpacity * 100) + '%'; }
-  if (typeof s.position === 'string') { $('d-position').value = s.position; $('custom-pos').style.display = s.position === 'custom' ? 'inline' : 'none'; }
-  if (typeof s.posX === 'number') $('d-posx').value = s.posX;
-  if (typeof s.posY === 'number') $('d-posy').value = s.posY;
-  if (typeof s.align === 'string') $('d-align').value = s.align;
-  if (typeof s.shadow === 'boolean') $('d-shadow').checked = s.shadow;
-  if (typeof s.outlineWidth === 'number') { $('d-outline').value = Math.round(s.outlineWidth * 100); $('d-outline-val').textContent = s.outlineWidth.toFixed(2) + 'em'; }
-  if (typeof s.glow === 'boolean') $('d-glow').checked = s.glow;
-  if (typeof s.glowColor === 'string') $('d-glowcolor').value = s.glowColor;
+  // デザイン UI 同期 (どれも操作中なら触らない)
+  if (typeof s.fontKey === 'string') setValueIfIdle($('d-font'), s.fontKey);
+  if (typeof s.fontSize === 'number') {
+    setValueIfIdle($('d-size'), s.fontSize);
+    $('d-size-val').textContent = s.fontSize + 'vh';
+  }
+  if (typeof s.color === 'string') setValueIfIdle($('d-color'), s.color);
+  if (typeof s.bgMode === 'string') setValueIfIdle($('d-bgmode'), s.bgMode);
+  if (typeof s.bgColor === 'string') setValueIfIdle($('d-bgcolor'), s.bgColor);
+  if (typeof s.bgOpacity === 'number') {
+    setValueIfIdle($('d-bgopacity'), Math.round(s.bgOpacity * 100));
+    $('d-bgopacity-val').textContent = Math.round(s.bgOpacity * 100) + '%';
+  }
+  if (typeof s.position === 'string') {
+    setValueIfIdle($('d-position'), s.position);
+    $('custom-pos').style.display = s.position === 'custom' ? 'inline' : 'none';
+  }
+  if (typeof s.posX === 'number') setValueIfIdle($('d-posx'), s.posX);
+  if (typeof s.posY === 'number') setValueIfIdle($('d-posy'), s.posY);
+  if (typeof s.align === 'string') setValueIfIdle($('d-align'), s.align);
+  if (typeof s.shadow === 'boolean') setCheckedIfIdle($('d-shadow'), s.shadow);
+  if (typeof s.outlineWidth === 'number') {
+    setValueIfIdle($('d-outline'), Math.round(s.outlineWidth * 100));
+    $('d-outline-val').textContent = s.outlineWidth.toFixed(2) + 'em';
+  }
+  if (typeof s.glow === 'boolean') setCheckedIfIdle($('d-glow'), s.glow);
+  if (typeof s.glowColor === 'string') setValueIfIdle($('d-glowcolor'), s.glowColor);
 
   // プレビューに実デザインを反映
   applyPreviewDesign(s);
@@ -445,6 +461,18 @@ $('d-outline').addEventListener('input', () => {
 });
 $('d-glow').addEventListener('change', () => sendDesign({ glow: $('d-glow').checked }));
 $('d-glowcolor').addEventListener('input', debounce(() => sendDesign({ glowColor: $('d-glowcolor').value }), 60));
+
+// ---- キーボードショートカット ----
+// テキスト入力中・ボタンフォーカス中 (Space) は競合するので無効化する。
+window.addEventListener('keydown', (e) => {
+  const t = e.target;
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+  if (e.code === 'Space' && t && t.tagName === 'BUTTON') return; // ボタン上での Space はネイティブクリックに任せる
+  if (e.code === 'Space')        { e.preventDefault(); send({ action: 'timer_toggle' }); }
+  else if (e.key === 'r' || e.key === 'R') { send({ action: 'timer_reset' }); }
+  else if (e.key === '+' || e.key === '=') { send({ action: 'timer_adjust', deltaMs:  60000 }); }
+  else if (e.key === '-' || e.key === '_') { send({ action: 'timer_adjust', deltaMs: -60000 }); }
+});
 </script>
 </body>
 </html>
