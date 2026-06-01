@@ -1,35 +1,35 @@
-ï»¿@echo off
-chcp 65001 >nul
+@echo off
+chcp 932 >nul
 setlocal enableextensions
-title ã‚«ã‚¦ãƒ³ãƒˆãƒ€ã‚¦ãƒ³ ã‚ªãƒ¼ãƒãƒ¼ãƒ¬ã‚¤ ã‚µãƒ¼ãƒãƒ¼
+title ƒJƒEƒ“ƒgƒ_ƒEƒ“ ƒI[ƒo[ƒŒƒC ƒT[ƒo[
 cd /d "%~dp0"
 
 where node >nul 2>nul
 if errorlevel 1 (
   echo.
-  echo [ã‚¨ãƒ©ãƒ¼] Node.js ãŒè¦‹ã¤ã‹ã‚Šã¾ã›ã‚“ã€‚
-  echo   https://nodejs.org/ja ã‹ã‚‰ LTS ç‰ˆã‚’ã‚¤ãƒ³ã‚¹ãƒˆãƒ¼ãƒ«ã—ã¦ã‹ã‚‰ã€ã‚‚ã†ä¸€åº¦ã“ã®ãƒ•ã‚¡ã‚¤ãƒ«ã‚’å®Ÿè¡Œã—ã¦ãã ã•ã„ã€‚
+  echo [ƒGƒ‰[] Node.js ‚ªŒ©‚Â‚©‚è‚Ü‚¹‚ñB
+  echo   https://nodejs.org/ja ‚©‚ç LTS ”Å‚ðƒCƒ“ƒXƒg[ƒ‹‚µ‚Ä‚©‚çA‚à‚¤ˆê“x‚±‚Ìƒtƒ@ƒCƒ‹‚ðŽÀs‚µ‚Ä‚­‚¾‚³‚¢B
   echo.
   pause
   exit /b 1
 )
 
 if not exist "node_modules\" (
-  echo åˆå›žã‚»ãƒƒãƒˆã‚¢ãƒƒãƒ—: å¿…è¦ãªãƒ‘ãƒƒã‚±ãƒ¼ã‚¸ã‚’ã‚¤ãƒ³ã‚¹ãƒˆãƒ¼ãƒ«ã—ã¾ã™ (npm install)...
+  echo ‰‰ñƒZƒbƒgƒAƒbƒv: •K—v‚ÈƒpƒbƒP[ƒW‚ðƒCƒ“ƒXƒg[ƒ‹‚µ‚Ü‚· ^(npm install^)...
   call npm install
   if errorlevel 1 (
-    echo [ã‚¨ãƒ©ãƒ¼] npm install ã«å¤±æ•—ã—ã¾ã—ãŸã€‚
+    echo [ƒGƒ‰[] npm install ‚ÉŽ¸”s‚µ‚Ü‚µ‚½B
     pause
     exit /b 1
   )
 )
 
 echo.
-echo ã‚«ã‚¦ãƒ³ãƒˆãƒ€ã‚¦ãƒ³ ã‚ªãƒ¼ãƒãƒ¼ãƒ¬ã‚¤ ã‚µãƒ¼ãƒãƒ¼ã‚’èµ·å‹•ã—ã¾ã™...
-echo (ã“ã®ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã‚’é–‰ã˜ã‚‹ã¨ã‚µãƒ¼ãƒãƒ¼ãŒæ­¢ã¾ã‚Šã¾ã™)
+echo ƒJƒEƒ“ƒgƒ_ƒEƒ“ ƒI[ƒo[ƒŒƒC ƒT[ƒo[‚ð‹N“®‚µ‚Ü‚·...
+echo ^(‚±‚ÌƒEƒBƒ“ƒhƒE‚ð•Â‚¶‚é‚ÆƒT[ƒo[‚ªŽ~‚Ü‚è‚Ü‚·^)
 echo.
 node server.js
 
 echo.
-echo ã‚µãƒ¼ãƒãƒ¼ãŒçµ‚äº†ã—ã¾ã—ãŸã€‚
+echo ƒT[ƒo[‚ªI—¹‚µ‚Ü‚µ‚½B
 pause
