@@ -1,0 +1,450 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>カウントダウン ディレクター操作盤</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@700;800&family=Dela+Gothic+One&family=RocknRoll+One&family=Orbitron:wght@700;900&family=Share+Tech+Mono&display=swap">
+<style>
+  :root {
+    --bg: #1a1d24; --panel: #242832; --border: #353a47;
+    --fg: #e8eaed; --muted: #9aa0ac; --accent: #4caf50; --accent2: #2196f3;
+    --danger: #ef5350; --warn: #ffb300;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 16px;
+    background: var(--bg); color: var(--fg);
+    font-family: 'Hiragino Sans', 'Yu Gothic', 'Meiryo', system-ui, sans-serif;
+    font-size: 14px;
+  }
+  h1 { font-size: 16px; margin: 0 0 12px; }
+  h2 { font-size: 13px; margin: 0 0 8px; color: var(--muted); font-weight: 600; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 12px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .row:last-child { margin-bottom: 0; }
+  label { color: var(--muted); font-size: 12px; }
+  button {
+    background: #2f3440; color: var(--fg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 7px 12px; cursor: pointer; font-size: 13px;
+    transition: filter 0.1s;
+  }
+  button:hover { filter: brightness(1.2); }
+  button:active { transform: translateY(1px); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; }
+  button.blue { background: var(--accent2); border-color: var(--accent2); color: #fff; }
+  button.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+  button.big { padding: 12px 20px; font-size: 16px; }
+  input[type=number], input[type=text] {
+    background: #1b1e26; color: var(--fg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 8px; font-size: 14px;
+  }
+  input[type=number] { width: 64px; }
+  input[type=color] { width: 38px; height: 30px; padding: 0; border: 1px solid var(--border); border-radius: 6px; background: none; cursor: pointer; }
+  input[type=range] { vertical-align: middle; }
+  select { background: #1b1e26; color: var(--fg); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; font-size: 13px; }
+  /* プレビューは透過を表す市松模様の上にタイマーを出して、OBS の見た目を再現する。 */
+  .preview-stage {
+    border-radius: 8px;
+    padding: 18px 8px;
+    min-height: 130px;
+    overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    background-color: #2b2b2b;
+    background-image:
+      linear-gradient(45deg, #383c45 25%, transparent 25%, transparent 75%, #383c45 75%, #383c45),
+      linear-gradient(45deg, #383c45 25%, transparent 25%, transparent 75%, #383c45 75%, #383c45);
+    background-size: 22px 22px;
+    background-position: 0 0, 11px 11px;
+  }
+  .preview {
+    font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1;
+    font-weight: 800; text-align: center; white-space: nowrap;
+    line-height: 1.1;
+    paint-order: stroke fill;
+    /* font-size / color / font-family / 装飾 / 背景は JS が実デザインを反映 */
+  }
+  .preview.bg-solid { padding: 0.1em 0.3em; border-radius: 4px; }
+  .preview.bg-panel { padding: 0.2em 0.5em; border-radius: 0.25em; }
+  @keyframes pvblink { 0%,100% { opacity: 1; } 50% { opacity: 0.15; } }
+  .preview.blinking { animation: pvblink 1s steps(1, end) infinite; }
+  .state-badge { font-size: 12px; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--border); }
+  .state-badge.paused { color: var(--warn); }
+  .state-badge.running { color: var(--accent); }
+  .state-badge.over { color: var(--danger); }
+  .sep { width: 1px; align-self: stretch; background: var(--border); margin: 0 4px; }
+  .status { font-size: 12px; color: var(--muted); }
+  .status .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--danger); margin-right: 5px; vertical-align: middle; }
+  .status.on .dot { background: var(--accent); }
+  .pill { background: #1b1e26; border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; font-size: 12px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  @media (max-width: 640px) { .grid2 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+  <h1>⏱ カウントダウン ディレクター操作盤
+    <span class="status" id="conn"><span class="dot"></span><span id="conn-text">未接続</span></span>
+  </h1>
+
+  <!-- タイマー -->
+  <div class="panel">
+    <div class="preview-stage"><div class="preview" id="preview">--:--</div></div>
+    <div class="row" style="justify-content:center; margin-top:8px;">
+      <span class="state-badge paused" id="state-badge">停止中</span>
+    </div>
+    <div class="row" style="justify-content:center;">
+      <button class="primary big" id="btn-toggle">開始</button>
+      <button class="big" id="btn-reset">リセット</button>
+    </div>
+    <div class="row" style="justify-content:center;">
+      <button data-delta="300000">＋5分</button>
+      <button data-delta="60000">＋1分</button>
+      <button data-delta="10000">＋10秒</button>
+      <button data-delta="-10000">−10秒</button>
+      <button data-delta="-60000">−1分</button>
+      <button data-delta="-300000">−5分</button>
+    </div>
+  </div>
+
+  <!-- 時間セット -->
+  <div class="panel">
+    <h2>時間をセット</h2>
+    <div class="row">
+      <input type="number" id="set-min" min="0" max="600" value="5"> 分
+      <input type="number" id="set-sec" min="0" max="59" value="0"> 秒
+      <button class="blue" id="btn-set">セット</button>
+      <span class="sep"></span>
+      <button class="preset" data-ms="60000">1:00</button>
+      <button class="preset" data-ms="180000">3:00</button>
+      <button class="preset" data-ms="300000">5:00</button>
+      <button class="preset" data-ms="600000">10:00</button>
+      <button class="preset" data-ms="900000">15:00</button>
+    </div>
+    <div class="row"><label>※ セットすると現在の残り時間がこの値に置き換わります (実行中でも可)</label></div>
+  </div>
+
+  <!-- ゼロ時の挙動 -->
+  <div class="panel">
+    <h2>00:00 到達時の挙動</h2>
+    <div class="row">
+      <label><input type="radio" name="zero" value="static"> 00:00 で停止 (何もしない)</label>
+      <label><input type="radio" name="zero" value="blink"> 00:00 で点滅</label>
+      <label><input type="radio" name="zero" value="countup"> マイナスカウント (経過時間)</label>
+      <label><input type="radio" name="zero" value="text"> テキスト表示</label>
+    </div>
+    <div class="row">
+      <label>テキスト:</label>
+      <input type="text" id="zero-text" value="まもなく開始" style="width:240px;">
+    </div>
+  </div>
+
+  <!-- デザイン -->
+  <div class="panel">
+    <h2>デザイン (リアルタイム反映)</h2>
+    <div class="grid2">
+      <div class="row">
+        <label>フォント</label>
+        <select id="d-font">
+          <option value="system">システム標準</option>
+          <option value="rounded">丸ゴシック (M PLUS Rounded)</option>
+          <option value="dela">極太 (Dela Gothic One)</option>
+          <option value="rocknroll">RocknRoll One</option>
+          <option value="orbitron">Orbitron (デジタル風)</option>
+          <option value="techmono">Share Tech Mono (等幅)</option>
+        </select>
+      </div>
+      <div class="row">
+        <label>サイズ</label>
+        <input type="range" id="d-size" min="4" max="60" step="1" value="20">
+        <span class="pill" id="d-size-val">20vh</span>
+      </div>
+      <div class="row">
+        <label>文字色</label>
+        <input type="color" id="d-color" value="#ffffff">
+      </div>
+      <div class="row">
+        <label>背景</label>
+        <select id="d-bgmode">
+          <option value="transparent">なし (透明)</option>
+          <option value="solid">塗り</option>
+          <option value="panel">パネル (角丸)</option>
+        </select>
+        <input type="color" id="d-bgcolor" value="#000000">
+        <input type="range" id="d-bgopacity" min="0" max="100" step="5" value="60" title="背景の不透明度">
+        <span class="pill" id="d-bgopacity-val">60%</span>
+      </div>
+      <div class="row">
+        <label>位置</label>
+        <select id="d-position">
+          <option value="center">中央</option>
+          <option value="top">上</option>
+          <option value="bottom">下</option>
+          <option value="tl">左上</option>
+          <option value="tr">右上</option>
+          <option value="bl">左下</option>
+          <option value="br">右下</option>
+          <option value="custom">カスタム</option>
+        </select>
+        <span id="custom-pos" style="display:none;">
+          X <input type="range" id="d-posx" min="0" max="100" value="50">
+          Y <input type="range" id="d-posy" min="0" max="100" value="50">
+        </span>
+      </div>
+      <div class="row">
+        <label>揃え</label>
+        <select id="d-align" title="右揃えにすると桁数が変わっても右端(秒)が固定され全体が動かない">
+          <option value="left">左揃え</option>
+          <option value="center">中央</option>
+          <option value="right">右揃え</option>
+        </select>
+        <label style="font-size:11px;">（右揃え=桁が減っても秒が動かない）</label>
+      </div>
+      <div class="row">
+        <label>縁取り</label>
+        <label><input type="checkbox" id="d-shadow" checked> 表示</label>
+        <span>太さ</span>
+        <input type="range" id="d-outline" min="0" max="25" step="1" value="5" title="縁取りの太さ">
+        <span class="pill" id="d-outline-val">0.05em</span>
+      </div>
+      <div class="row">
+        <label>グロー</label>
+        <label><input type="checkbox" id="d-glow"> 表示</label>
+        <input type="color" id="d-glowcolor" value="#00e5ff" title="グロー色">
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>OBS ブラウザソース URL</h2>
+    <div class="row"><span class="pill" id="overlay-url"></span></div>
+  </div>
+
+<script>
+'use strict';
+
+// ---- ローカル状態 (プレビュー用) ----
+let running = false;
+let baseRemaining = 0;
+let baseAt = performance.now();
+let zeroMode = 'blink';
+let zeroText = 'まもなく開始';
+
+const $ = (id) => document.getElementById(id);
+
+// overlay と一致するフォント定義
+const FONT_CSS = {
+  system: "'Hiragino Sans','Yu Gothic','Meiryo',system-ui,sans-serif",
+  rounded: "'M PLUS Rounded 1c', sans-serif",
+  dela: "'Dela Gothic One', sans-serif",
+  rocknroll: "'RocknRoll One', sans-serif",
+  orbitron: "'Orbitron', sans-serif",
+  techmono: "'Share Tech Mono', monospace",
+};
+function hexToRgb(hex) {
+  const h = String(hex).replace('#', '');
+  if (h.length === 3) return { r: parseInt(h[0]+h[0],16), g: parseInt(h[1]+h[1],16), b: parseInt(h[2]+h[2],16) };
+  return { r: parseInt(h.slice(0,2),16)||0, g: parseInt(h.slice(2,4),16)||0, b: parseInt(h.slice(4,6),16)||0 };
+}
+
+// プレビューに実デザインを反映する。
+function applyPreviewDesign(s) {
+  const el = $('preview');
+  if (typeof s.fontKey === 'string') el.style.fontFamily = FONT_CSS[s.fontKey] || FONT_CSS.system;
+  if (typeof s.color === 'string') el.style.color = s.color;
+  // サイズ: overlay は vh。プレビュー枠に収まるよう px に近似マッピング (上限あり)。
+  if (typeof s.fontSize === 'number') el.style.fontSize = Math.min(110, Math.max(16, s.fontSize * 2.2)) + 'px';
+  // 背景
+  el.classList.toggle('bg-solid', s.bgMode === 'solid');
+  el.classList.toggle('bg-panel', s.bgMode === 'panel');
+  if (s.bgMode === 'transparent' || !s.bgMode) {
+    el.style.background = 'transparent';
+  } else {
+    const rgb = hexToRgb(s.bgColor || '#000000');
+    const a = (typeof s.bgOpacity === 'number') ? s.bgOpacity : 0.6;
+    el.style.background = `rgba(${rgb.r},${rgb.g},${rgb.b},${a})`;
+  }
+  // 縁取り (text-stroke) とグロー (text-shadow) — overlay と同方式
+  const ow = (typeof s.outlineWidth === 'number') ? s.outlineWidth : 0.05;
+  const stroke = s.shadow ? (ow + 'em #000') : '';
+  el.style.webkitTextStroke = stroke;
+  el.style.textStroke = stroke;
+  if (s.glow) {
+    const g = s.glowColor || '#00e5ff';
+    el.style.textShadow = `0 0 0.12em ${g}, 0 0 0.28em ${g}, 0 0 0.55em ${g}`;
+  } else {
+    el.style.textShadow = 'none';
+  }
+  // 揃え: プレビュー枠 (flex) の寄せ方で見せる
+  const align = (s.align === 'left' || s.align === 'right') ? s.align : 'center';
+  const stage = document.querySelector('.preview-stage');
+  if (stage) stage.style.justifyContent = align === 'left' ? 'flex-start' : align === 'right' ? 'flex-end' : 'center';
+  el.style.textAlign = align;
+}
+
+// overlay URL 表示
+$('overlay-url').textContent = location.origin + '/overlay';
+
+// ---- WebSocket ----
+let ws = null, reconnectTimer = null, attempts = 0;
+const WS_URL = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host;
+function connect() {
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+  let sock; try { sock = new WebSocket(WS_URL); } catch (_) { scheduleReconnect(); return; }
+  ws = sock;
+  sock.onopen = () => { if (ws !== sock) return; attempts = 0; setConn(true); };
+  sock.onmessage = (ev) => {
+    if (ws !== sock) return;
+    let d; try { d = JSON.parse(ev.data); } catch (_) { return; }
+    if (d && d.type === 'state') applyState(d);
+  };
+  sock.onclose = () => { if (ws !== sock) return; ws = null; setConn(false); scheduleReconnect(); };
+  sock.onerror = () => { if (ws !== sock) return; setConn(false); };
+}
+function scheduleReconnect() {
+  attempts = Math.min(attempts + 1, 6);
+  reconnectTimer = setTimeout(connect, Math.min(15000, 500 * Math.pow(2, attempts - 1)));
+}
+function setConn(on) {
+  $('conn').classList.toggle('on', on);
+  $('conn-text').textContent = on ? '接続中' : '未接続 (再接続中)';
+}
+function send(obj) {
+  try { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); } catch (_) {}
+}
+connect();
+
+// 入力中の要素は server state で上書きしない
+function typing(el) { return document.activeElement === el; }
+function setIfNotTyping(el, val) { if (el && !typing(el)) el.value = val; }
+
+function applyState(s) {
+  running = !!s.running;
+  if (typeof s.remainingMs === 'number') { baseRemaining = s.remainingMs; baseAt = performance.now(); }
+  if (typeof s.zeroMode === 'string') zeroMode = s.zeroMode;
+  if (typeof s.zeroText === 'string') zeroText = s.zeroText;
+
+  // toggle ボタン表記
+  $('btn-toggle').textContent = running ? '一時停止' : '開始';
+  $('btn-toggle').classList.toggle('primary', !running);
+  $('btn-toggle').classList.toggle('danger', running);
+
+  // ゼロ挙動 UI
+  const zr = document.querySelector('input[name=zero][value="' + zeroMode + '"]');
+  if (zr) zr.checked = true;
+  setIfNotTyping($('zero-text'), zeroText);
+
+  // デザイン UI 同期
+  if (s.fontKey && !typing($('d-font'))) $('d-font').value = s.fontKey;
+  if (typeof s.fontSize === 'number') { $('d-size').value = s.fontSize; $('d-size-val').textContent = s.fontSize + 'vh'; }
+  if (typeof s.color === 'string') $('d-color').value = s.color;
+  if (typeof s.bgMode === 'string') $('d-bgmode').value = s.bgMode;
+  if (typeof s.bgColor === 'string') $('d-bgcolor').value = s.bgColor;
+  if (typeof s.bgOpacity === 'number') { $('d-bgopacity').value = Math.round(s.bgOpacity * 100); $('d-bgopacity-val').textContent = Math.round(s.bgOpacity * 100) + '%'; }
+  if (typeof s.position === 'string') { $('d-position').value = s.position; $('custom-pos').style.display = s.position === 'custom' ? 'inline' : 'none'; }
+  if (typeof s.posX === 'number') $('d-posx').value = s.posX;
+  if (typeof s.posY === 'number') $('d-posy').value = s.posY;
+  if (typeof s.align === 'string') $('d-align').value = s.align;
+  if (typeof s.shadow === 'boolean') $('d-shadow').checked = s.shadow;
+  if (typeof s.outlineWidth === 'number') { $('d-outline').value = Math.round(s.outlineWidth * 100); $('d-outline-val').textContent = s.outlineWidth.toFixed(2) + 'em'; }
+  if (typeof s.glow === 'boolean') $('d-glow').checked = s.glow;
+  if (typeof s.glowColor === 'string') $('d-glowcolor').value = s.glowColor;
+
+  // プレビューに実デザインを反映
+  applyPreviewDesign(s);
+}
+
+// ---- プレビュー描画 ----
+function clock(totalSec) {
+  const h = Math.floor(totalSec / 3600), m = Math.floor((totalSec % 3600) / 60), sec = totalSec % 60;
+  const mm = String(m).padStart(2, '0'), ss = String(sec).padStart(2, '0');
+  return h > 0 ? (h + ':' + mm + ':' + ss) : (mm + ':' + ss);
+}
+function renderPreview() {
+  const rem = running ? (baseRemaining - (performance.now() - baseAt)) : baseRemaining;
+  const el = $('preview');
+  const badge = $('state-badge');
+  let text, blink = false, state, label;
+  if (rem > 0) {
+    text = clock(Math.ceil(rem / 1000));
+    state = running ? 'running' : 'paused';
+    label = running ? '実行中' : '停止中';
+  } else {
+    state = 'over';
+    label = '00:00 到達';
+    if (zeroMode === 'countup') text = '+' + clock(Math.floor(-rem / 1000));
+    else if (zeroMode === 'text') text = zeroText;
+    else if (zeroMode === 'blink') { text = clock(0); blink = true; }
+    else text = clock(0); // static
+  }
+  el.textContent = text;
+  el.classList.toggle('blinking', blink); // 色/背景/フォントは applyPreviewDesign が管理。ここは点滅のみ
+  badge.textContent = label;
+  badge.className = 'state-badge ' + state;
+  requestAnimationFrame(renderPreview);
+}
+requestAnimationFrame(renderPreview);
+
+// ---- タイマー操作 ----
+$('btn-toggle').addEventListener('click', () => send({ action: 'timer_toggle' }));
+$('btn-reset').addEventListener('click', () => send({ action: 'timer_reset' }));
+document.querySelectorAll('[data-delta]').forEach((b) => {
+  b.addEventListener('click', () => send({ action: 'timer_adjust', deltaMs: parseInt(b.dataset.delta, 10) }));
+});
+$('btn-set').addEventListener('click', () => {
+  const min = parseInt($('set-min').value, 10) || 0;
+  const sec = parseInt($('set-sec').value, 10) || 0;
+  const ms = (min * 60 + sec) * 1000;
+  send({ action: 'timer_set', ms });
+});
+document.querySelectorAll('.preset[data-ms]').forEach((b) => {
+  b.addEventListener('click', () => {
+    const ms = parseInt(b.dataset.ms, 10);
+    $('set-min').value = Math.floor(ms / 60000);
+    $('set-sec').value = Math.floor((ms % 60000) / 1000);
+    send({ action: 'timer_set', ms });
+  });
+});
+
+// ---- ゼロ挙動 ----
+document.querySelectorAll('input[name=zero]').forEach((r) => {
+  r.addEventListener('change', () => { if (r.checked) send({ action: 'timer_zero', mode: r.value }); });
+});
+$('zero-text').addEventListener('input', debounce(() => send({ action: 'timer_zero', text: $('zero-text').value }), 200));
+$('zero-text').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); send({ action: 'timer_zero', text: $('zero-text').value }); } });
+
+// ---- デザイン ----
+function sendDesign(data) { send({ action: 'design', data }); }
+function debounce(fn, ms) { let t = null; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
+
+$('d-font').addEventListener('change', () => sendDesign({ fontKey: $('d-font').value }));
+$('d-size').addEventListener('input', () => {
+  $('d-size-val').textContent = $('d-size').value + 'vh';
+  sendDesign({ fontSize: parseInt($('d-size').value, 10) });
+});
+$('d-color').addEventListener('input', debounce(() => sendDesign({ color: $('d-color').value }), 60));
+$('d-bgmode').addEventListener('change', () => sendDesign({ bgMode: $('d-bgmode').value }));
+$('d-bgcolor').addEventListener('input', debounce(() => sendDesign({ bgColor: $('d-bgcolor').value }), 60));
+$('d-bgopacity').addEventListener('input', () => {
+  $('d-bgopacity-val').textContent = $('d-bgopacity').value + '%';
+  sendDesign({ bgOpacity: parseInt($('d-bgopacity').value, 10) / 100 });
+});
+$('d-position').addEventListener('change', () => {
+  $('custom-pos').style.display = $('d-position').value === 'custom' ? 'inline' : 'none';
+  sendDesign({ position: $('d-position').value });
+});
+$('d-posx').addEventListener('input', debounce(() => sendDesign({ posX: parseInt($('d-posx').value, 10) }), 40));
+$('d-posy').addEventListener('input', debounce(() => sendDesign({ posY: parseInt($('d-posy').value, 10) }), 40));
+$('d-align').addEventListener('change', () => sendDesign({ align: $('d-align').value }));
+$('d-shadow').addEventListener('change', () => sendDesign({ shadow: $('d-shadow').checked }));
+$('d-outline').addEventListener('input', () => {
+  const em = parseInt($('d-outline').value, 10) / 100;
+  $('d-outline-val').textContent = em.toFixed(2) + 'em';
+  sendDesign({ outlineWidth: em });
+});
+$('d-glow').addEventListener('change', () => sendDesign({ glow: $('d-glow').checked }));
+$('d-glowcolor').addEventListener('input', debounce(() => sendDesign({ glowColor: $('d-glowcolor').value }), 60));
+</script>
+</body>
+</html>

@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Countdown Overlay</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@700;800&family=Dela+Gothic+One&family=RocknRoll+One&family=Orbitron:wght@700;900&family=Share+Tech+Mono&display=swap">
+<style>
+  :root {
+    --default-font: 'Hiragino Sans', 'Yu Gothic', 'Meiryo', system-ui, sans-serif;
+    --timer-font: var(--default-font);
+    --timer-color: #ffffff;
+    --timer-size: 20vh;
+    --bg-fill: transparent;
+    --glow-color: #00e5ff;
+    --outline-width: 0.05em;
+  }
+  html, body {
+    margin: 0; padding: 0;
+    width: 100vw; height: 100vh;
+    overflow: hidden;
+    background: transparent;
+    user-select: none;
+  }
+  #stage { position: fixed; inset: 0; }
+  #timer {
+    position: absolute;
+    left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    font-family: var(--timer-font);
+    font-size: var(--timer-size);
+    line-height: 1.1;
+    color: var(--timer-color);
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+    white-space: nowrap;
+    background: var(--bg-fill);
+    transition: color 0.15s, background 0.15s;
+  }
+  /* 背景モード */
+  #timer.bg-solid { padding: 0.1em 0.3em; border-radius: 4px; }
+  #timer.bg-panel { padding: 0.2em 0.5em; border-radius: 0.25em; }
+  /* 装飾。
+     縁取りは text-shadow の多方向ずらしだとガタつくので -webkit-text-stroke を使用。
+     paint-order: stroke fill で「縁を先に塗ってから文字を上に重ねる」ことで、
+     stroke が文字内側を侵食せず均一でクリーンな縁になる。
+     グローは text-shadow で別途付与 (text-stroke と共存できる)。 */
+  #timer { paint-order: stroke fill; }
+  #timer.has-shadow {
+    -webkit-text-stroke: var(--outline-width) #000;
+    text-stroke: var(--outline-width) #000;
+  }
+  #timer.has-glow {
+    text-shadow:
+      0 0 0.12em var(--glow-color),
+      0 0 0.28em var(--glow-color),
+      0 0 0.55em var(--glow-color);
+  }
+  /* ゼロ点滅 */
+  @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.15; } }
+  #timer.blinking { animation: blink 1s steps(1, end) infinite; }
+
+  #status {
+    position: fixed; left: 8px; bottom: 8px;
+    font-size: 12px; color: #fff;
+    background: rgba(0,0,0,0.6); padding: 4px 8px; border-radius: 4px;
+    display: none; z-index: 100;
+  }
+  body.debug #status { display: block; }
+</style>
+</head>
+<body>
+  <div id="stage"><div id="timer">--:--</div></div>
+  <div id="status">init</div>
+<script>
+'use strict';
+const params = new URLSearchParams(location.search);
+if (params.get('debug') === '1') document.body.classList.add('debug');
+
+const timerEl = document.getElementById('timer');
+const statusEl = document.getElementById('status');
+function setStatus(s) { statusEl.textContent = s; }
+
+// 共有フォント定義 (director と一致させる)
+const FONT_CSS = {
+  system: 'var(--default-font)',
+  rounded: "'M PLUS Rounded 1c', sans-serif",
+  dela: "'Dela Gothic One', sans-serif",
+  rocknroll: "'RocknRoll One', sans-serif",
+  orbitron: "'Orbitron', sans-serif",
+  techmono: "'Share Tech Mono', monospace",
+};
+
+// ---- 状態 (クライアントローカル) ----
+let running = false;
+let baseRemaining = 0;     // 受信時点の残り (ms)
+let baseAt = performance.now(); // 受信したローカル時刻
+let zeroMode = 'blink';
+let zeroText = 'まもなく開始';
+
+function applyState(s) {
+  if (!s || s.type !== 'state') return;
+  running = !!s.running;
+  if (typeof s.remainingMs === 'number') {
+    baseRemaining = s.remainingMs;
+    baseAt = performance.now();
+  }
+  if (typeof s.zeroMode === 'string') zeroMode = s.zeroMode;
+  if (typeof s.zeroText === 'string') zeroText = s.zeroText;
+  applyDesign(s);
+  setStatus(running ? 'running' : 'paused');
+}
+
+function applyDesign(s) {
+  const root = document.documentElement;
+  // font
+  const fam = (s.fontKey && FONT_CSS[s.fontKey]) ? FONT_CSS[s.fontKey]
+            : (s.fontFamily ? s.fontFamily : 'var(--default-font)');
+  root.style.setProperty('--timer-font', fam);
+  if (typeof s.fontSize === 'number') root.style.setProperty('--timer-size', s.fontSize + 'vh');
+  if (typeof s.color === 'string') root.style.setProperty('--timer-color', s.color);
+  if (typeof s.glowColor === 'string') root.style.setProperty('--glow-color', s.glowColor);
+  if (typeof s.outlineWidth === 'number') root.style.setProperty('--outline-width', s.outlineWidth + 'em');
+
+  // background
+  const fill = bgFill(s);
+  root.style.setProperty('--bg-fill', fill);
+  timerEl.classList.toggle('bg-solid', s.bgMode === 'solid');
+  timerEl.classList.toggle('bg-panel', s.bgMode === 'panel');
+
+  // decoration
+  timerEl.classList.toggle('has-shadow', !!s.shadow);
+  timerEl.classList.toggle('has-glow', !!s.glow);
+
+  // position
+  applyPosition(s);
+}
+
+function bgFill(s) {
+  if (s.bgMode === 'transparent' || !s.bgMode) return 'transparent';
+  const rgb = hexToRgb(s.bgColor || '#000000');
+  const a = (typeof s.bgOpacity === 'number') ? s.bgOpacity : 0.6;
+  return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${a})`;
+}
+
+function hexToRgb(hex) {
+  const h = String(hex).replace('#', '');
+  if (h.length === 3) {
+    return { r: parseInt(h[0]+h[0],16), g: parseInt(h[1]+h[1],16), b: parseInt(h[2]+h[2],16) };
+  }
+  return { r: parseInt(h.slice(0,2),16) || 0, g: parseInt(h.slice(2,4),16) || 0, b: parseInt(h.slice(4,6),16) || 0 };
+}
+
+const POS_PRESET = {
+  center: [50, 50], top: [50, 14], bottom: [50, 86],
+  tl: [16, 14], tr: [84, 14], bl: [16, 86], br: [84, 86],
+};
+function applyPosition(s) {
+  let x = 50, y = 50;
+  if (s.position === 'custom') {
+    x = (typeof s.posX === 'number') ? s.posX : 50;
+    y = (typeof s.posY === 'number') ? s.posY : 50;
+  } else if (POS_PRESET[s.position]) {
+    [x, y] = POS_PRESET[s.position];
+  }
+  timerEl.style.left = x + '%';
+  timerEl.style.top = y + '%';
+  // 揃え: アンカーする辺を translateX で決める。
+  //  left  → 左端を基準点に (translateX 0)
+  //  right → 右端を基準点に (translateX -100%) … 桁が減っても右端=秒が動かない
+  //  center→ 中央 (translateX -50%)
+  const align = (s.align === 'left' || s.align === 'right') ? s.align : 'center';
+  const tx = align === 'left' ? '0' : align === 'right' ? '-100%' : '-50%';
+  timerEl.style.transform = 'translate(' + tx + ', -50%)';
+  timerEl.style.textAlign = align;
+}
+
+// ---- 表示計算 ----
+function clock(totalSec) {
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const sec = totalSec % 60;
+  const mm = String(m).padStart(2, '0');
+  const ss = String(sec).padStart(2, '0');
+  return h > 0 ? (h + ':' + mm + ':' + ss) : (mm + ':' + ss);
+}
+
+let lastText = '';
+let lastBlink = null;
+function render() {
+  const rem = running ? (baseRemaining - (performance.now() - baseAt)) : baseRemaining;
+  let text, blink = false;
+  if (rem > 0) {
+    text = clock(Math.ceil(rem / 1000));
+  } else {
+    if (zeroMode === 'countup') {
+      text = '+' + clock(Math.floor(-rem / 1000));
+    } else if (zeroMode === 'text') {
+      text = zeroText;
+    } else if (zeroMode === 'static') {
+      text = clock(0); // 00:00 のまま静止 (点滅なし)
+    } else { // blink
+      text = clock(0);
+      blink = true;
+    }
+  }
+  if (text !== lastText) { timerEl.textContent = text; lastText = text; }
+  if (blink !== lastBlink) { timerEl.classList.toggle('blinking', blink); lastBlink = blink; }
+  requestAnimationFrame(render);
+}
+requestAnimationFrame(render);
+
+// ---- WebSocket ----
+let ws = null;
+let reconnectTimer = null;
+let attempts = 0;
+const WS_URL = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host;
+
+function connect() {
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+  let sock;
+  try { sock = new WebSocket(WS_URL); } catch (_) { scheduleReconnect(); return; }
+  ws = sock;
+  setStatus('connecting');
+  sock.onopen = () => { if (ws !== sock) return; attempts = 0; setStatus('connected'); };
+  sock.onmessage = (ev) => {
+    if (ws !== sock) return;
+    let d; try { d = JSON.parse(ev.data); } catch (_) { return; }
+    if (d && d.type === 'state') applyState(d);
+  };
+  sock.onclose = () => { if (ws !== sock) return; ws = null; setStatus('disconnected'); scheduleReconnect(); };
+  sock.onerror = () => { if (ws !== sock) return; setStatus('error'); };
+}
+function scheduleReconnect() {
+  attempts = Math.min(attempts + 1, 6);
+  const delay = Math.min(15000, 500 * Math.pow(2, attempts - 1));
+  reconnectTimer = setTimeout(connect, delay);
+}
+connect();
+</script>
+</body>
+</html>

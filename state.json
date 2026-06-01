@@ -1,0 +1,20 @@
+{
+  "durationMs": 5000,
+  "zeroMode": "text",
+  "zeroText": "終了！！",
+  "fontKey": "rounded",
+  "fontFamily": "",
+  "fontSize": 11,
+  "color": "#ffffff",
+  "bgMode": "transparent",
+  "bgColor": "#000000",
+  "bgOpacity": 0.45,
+  "position": "custom",
+  "posX": 96,
+  "posY": 11,
+  "align": "right",
+  "shadow": true,
+  "outlineWidth": 0.13,
+  "glow": false,
+  "glowColor": "#000000"
+}

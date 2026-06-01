@@ -1,0 +1,12 @@
+{
+  "name": "countdown-overlay",
+  "version": "1.0.0",
+  "description": "OBS用カウントダウンタイマー オーバーレイ + ディレクター操作盤 (WebSocket同期)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
