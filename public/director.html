@@ -45,13 +45,16 @@
   input[type=color] { width: 38px; height: 30px; padding: 0; border: 1px solid var(--border); border-radius: 6px; background: none; cursor: pointer; }
   input[type=range] { vertical-align: middle; }
   select { background: #1b1e26; color: var(--fg); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; font-size: 13px; }
-  /* プレビューは透過を表す市松模様の上にタイマーを出して、OBS の見た目を再現する。 */
+  /* プレビューは OBS のキャンバス (1920x1080) を縮小描画する。
+     こうすると font-size を実 px で持てるので、縁取り (em) や位置 (%) の
+     見え方が OBS と完全に一致する (小サイズ描画特有のアンチエイリアス差が出ない)。 */
   .preview-stage {
     border-radius: 8px;
-    padding: 18px 8px;
-    min-height: 130px;
     overflow: hidden;
-    display: flex; align-items: center; justify-content: center;
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    max-height: 220px;
     background-color: #2b2b2b;
     background-image:
       linear-gradient(45deg, #383c45 25%, transparent 25%, transparent 75%, #383c45 75%, #383c45),
@@ -59,12 +62,22 @@
     background-size: 22px 22px;
     background-position: 0 0, 11px 11px;
   }
+  .preview-canvas {
+    position: absolute;
+    top: 0; left: 0;
+    width: 1920px;
+    height: 1080px;
+    transform-origin: top left;
+    pointer-events: none;
+    /* JS で transform: scale(...) をセット */
+  }
   .preview {
+    position: absolute;
     font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1;
-    font-weight: 800; text-align: center; white-space: nowrap;
+    font-weight: 800; white-space: nowrap;
     line-height: 1.1;
     paint-order: stroke fill;
-    /* font-size / color / font-family / 装飾 / 背景は JS が実デザインを反映 */
+    /* font-size / color / font-family / 装飾 / 背景 / 位置 は JS が反映 */
   }
   .preview.bg-solid { padding: 0.1em 0.3em; border-radius: 4px; }
   .preview.bg-panel { padding: 0.2em 0.5em; border-radius: 0.25em; }
@@ -90,7 +103,7 @@
 
   <!-- タイマー -->
   <div class="panel">
-    <div class="preview-stage"><div class="preview" id="preview">--:--</div></div>
+    <div class="preview-stage"><div class="preview-canvas"><div class="preview" id="preview">--:--</div></div></div>
     <div class="row" style="justify-content:center; margin-top:8px;">
       <span class="state-badge paused" id="state-badge">停止中</span>
     </div>
@@ -253,13 +266,34 @@ function hexToRgb(hex) {
   return { r: parseInt(h.slice(0,2),16)||0, g: parseInt(h.slice(2,4),16)||0, b: parseInt(h.slice(4,6),16)||0 };
 }
 
-// プレビューに実デザインを反映する。
+// 1920x1080 のキャンバスをステージサイズに合わせて縮小する。
+// transform: scale() で「描画→縮小」の順なので、OBS で見えるピクセル組成と同じ。
+function fitPreviewCanvas() {
+  const stage = document.querySelector('.preview-stage');
+  const canvas = document.querySelector('.preview-canvas');
+  if (!stage || !canvas) return;
+  const w = stage.clientWidth;
+  const h = stage.clientHeight;
+  const scale = Math.min(w / 1920, h / 1080);
+  canvas.style.transform = 'scale(' + scale + ')';
+}
+window.addEventListener('resize', fitPreviewCanvas);
+// 初回 + フォント読込後 (フォント差で行高が変わるので再フィット)
+requestAnimationFrame(fitPreviewCanvas);
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitPreviewCanvas);
+
+const POS_PRESET = {
+  center: [50, 50], top: [50, 14], bottom: [50, 86],
+  tl: [16, 14], tr: [84, 14], bl: [16, 86], br: [84, 86],
+};
+
+// プレビューに実デザインを反映する。overlay 側と同じロジックを 1080 キャンバスに対して適用。
 function applyPreviewDesign(s) {
   const el = $('preview');
   if (typeof s.fontKey === 'string') el.style.fontFamily = FONT_CSS[s.fontKey] || FONT_CSS.system;
   if (typeof s.color === 'string') el.style.color = s.color;
-  // サイズ: overlay は vh。プレビュー枠に収まるよう px に近似マッピング (上限あり)。
-  if (typeof s.fontSize === 'number') el.style.fontSize = Math.min(110, Math.max(16, s.fontSize * 2.2)) + 'px';
+  // 1080 高さキャンバス上では 1vh = 10.8px。これで OBS と完全に同じ寸法になる。
+  if (typeof s.fontSize === 'number') el.style.fontSize = (s.fontSize * 10.8) + 'px';
   // 背景
   el.classList.toggle('bg-solid', s.bgMode === 'solid');
   el.classList.toggle('bg-panel', s.bgMode === 'panel');
@@ -271,7 +305,6 @@ function applyPreviewDesign(s) {
     el.style.background = `rgba(${rgb.r},${rgb.g},${rgb.b},${a})`;
   }
   // 縁取り (-webkit-text-stroke) とグロー (text-shadow) — overlay と同方式
-  // text-stroke は非標準でブラウザでは効かないので -webkit- のみ。
   const ow = (typeof s.outlineWidth === 'number') ? s.outlineWidth : 0.05;
   const oc = (typeof s.outlineColor === 'string') ? s.outlineColor : '#000000';
   el.style.webkitTextStroke = s.shadow ? (ow + 'em ' + oc) : '';
@@ -281,10 +314,19 @@ function applyPreviewDesign(s) {
   } else {
     el.style.textShadow = 'none';
   }
-  // 揃え: プレビュー枠 (flex) の寄せ方で見せる
+  // 位置 + 揃え — overlay と同じ計算
+  let x = 50, y = 50;
+  if (s.position === 'custom') {
+    x = typeof s.posX === 'number' ? s.posX : 50;
+    y = typeof s.posY === 'number' ? s.posY : 50;
+  } else if (POS_PRESET[s.position]) {
+    [x, y] = POS_PRESET[s.position];
+  }
+  el.style.left = x + '%';
+  el.style.top = y + '%';
   const align = (s.align === 'left' || s.align === 'right') ? s.align : 'center';
-  const stage = document.querySelector('.preview-stage');
-  if (stage) stage.style.justifyContent = align === 'left' ? 'flex-start' : align === 'right' ? 'flex-end' : 'center';
+  const tx = align === 'left' ? '0' : align === 'right' ? '-100%' : '-50%';
+  el.style.transform = 'translate(' + tx + ', -50%)';
   el.style.textAlign = align;
 }
 
